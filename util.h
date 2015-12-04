@@ -12,6 +12,7 @@ namespace util {
 
 	vec_t operator+(const util::vec_t& v1, const util::vec_t& v2);
 	double operator*(const util::vec_t& v1, const util::vec_t& v2);
+	std::ostream& operator<<(std::ostream &str, util::vec_t &arg);
 
 	std::string pretty_size(size_t size);
 };

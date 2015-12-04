@@ -161,64 +161,60 @@ void Solver::fillMedium(double chi1)
 		}
 	}
 
-	SphereMedium sphere({0, 0, 0}, 10, 2);
+	SphereMedium sphere({0, 0, 0}, 2, 2);
 
 	// Sphere position in grid points with origin in lowest corner.
 	util::vec_t spherepos = {
-		sphere.pos().x / mDx + mXsize / 2,
-		sphere.pos().y / mDy + mYsize / 2,
-		sphere.pos().z / mDz + mZsize / 2
+		sphere.pos().x / mDx + mXsize / 2 + 1,
+		sphere.pos().y / mDy + mYsize / 2 + 1,
+		sphere.pos().z / mDz + mZsize / 2 + 1
 	};
 
-	for(int i = spherepos.x - sphere.r() - 1; i <= spherepos.x + sphere.r() + 1; ++i)
+	// Loop over the cube containing the sphere.
+	for(int i = spherepos.x - sphere.r() / mDx - 1; i <= spherepos.x + sphere.r() / mDx + 1; ++i)
 	{
-		for(int j = spherepos.y - sphere.r() - 1; j <= spherepos.y + sphere.r() + 1; ++j)
+		for(int j = spherepos.y - sphere.r() / mDy - 1; j <= spherepos.y + sphere.r() / mDy + 1; ++j)
 		{
-			for(int k = spherepos.z - sphere.r() - 1; k <= spherepos.z + sphere.r() + 1; ++k)
+			for(int k = spherepos.z - sphere.r() / mDz - 1; k <= spherepos.z + sphere.r() / mDz + 1; ++k)
 			{
-				const int num_subpixels = 3;
+				const int num_subpixels = 4;
 				int subpixels_inside_sphere = 0;
 
+				// Position in real coordinates relative to the sphere origin.
 				util::vec_t pos = {
-					(i - mXsize / 2) * mDx - spherepos.x,
-					(i - mYsize / 2) * mDy - spherepos.y,
-					(i - mZsize / 2) * mDz - spherepos.z
+					(i - mXsize / 2 - 1) * mDx - sphere.pos().x,
+					(j - mYsize / 2 - 1) * mDy - sphere.pos().y,
+					(k - mZsize / 2 - 1) * mDz - sphere.pos().z
 				};
-				// Use subpixels to avoid hard boundaries.
-				util::vec_t subpixel_offset;
-				for(int i1 = 0; i1 < 3; ++i1)
-				{
-					subpixel_offset.x = i1 * mDx / num_subpixels;
-					for(int i2 = 0; i2 < 3; ++i2)
-					{
-						subpixel_offset.y = i2 * mDy / num_subpixels;
-						for(int i3 = 0; i3 < 3; ++i3)
-						{
-							subpixel_offset.z = i3 * mDz / num_subpixels;
 
-							if((pos + subpixel_offset) * (pos + subpixel_offset) <= sphere.r())
+				// Use subpixels to avoid stair casing.
+				util::vec_t subpixel_offset;
+				for(int i1 = 0; i1 < num_subpixels; ++i1)
+				{
+					subpixel_offset.x = (i1 + .5) * mDx / num_subpixels;
+					for(int i2 = 0; i2 < num_subpixels; ++i2)
+					{
+						subpixel_offset.y = (i2 + .5) * mDy / num_subpixels;
+						for(int i3 = 0; i3 < num_subpixels; ++i3)
+						{
+							subpixel_offset.z = (i3 + .5) * mDz / num_subpixels;
+
+							if((pos + subpixel_offset) * (pos + subpixel_offset) <= sphere.r()*sphere.r())
 								subpixels_inside_sphere++;
 						}
 					}
 				}
-				
-				epsilon(i, j, k) = 1 + sphere.chi1();// * subpixels_inside_sphere / (num_subpixels*num_subpixels*num_subpixels);
+
+				epsilon(i, j, k) = 1 + sphere.chi1() * subpixels_inside_sphere / (num_subpixels*num_subpixels*num_subpixels);
 			}
 		}
 	}
-	/*
-	for(int i = 3*mXsize/8+1; i < 5*mXsize/8+1; ++i)
-		for(int j = 3*mYsize/8+1; j < 5*mYsize/8+1; ++j)
-			for(int k = 3*mZsize/8+1; k < 5*mZsize/8+1; ++k)
-			{
-				if((i-mXsize/2)*(i-mXsize/2) + (j-mYsize/2)*(j-mYsize/2) + (k-mZsize/2)*(k-mZsize/2) <= (mXsize/8)*(mXsize/8))
-					epsilon(i, j, k) = 1 + 2;
-			}
-*/
+/*
+	// Save medium for debugging purposes.
 	std::ofstream eps("epsilon.dat");
 	for(int i = 0; i < (mXsize+2)*(mYsize+2)*(mZsize+2); ++i)
 		eps << mPermittivity[i] << '\t';
-	throw 2;
+*/
 }
 
 void Solver::setBoundaryConditions()
@@ -227,8 +223,8 @@ void Solver::setBoundaryConditions()
 	mBoundaryHighX = periodic;
 	mBoundaryLowY = periodic;
 	mBoundaryHighY = periodic;
-	mBoundaryLowZ = periodic;
-	mBoundaryHighZ = periodic;
+	mBoundaryLowZ = reflecting;
+	mBoundaryHighZ = reflecting;
 
 	if(mBoundaryLowX == periodic || mBoundaryHighX == periodic)
 	{
@@ -251,6 +247,7 @@ void Solver::setBoundaryConditions()
 
 		mFullZsize = mZsize + 1;
 	}
+	mFullZsize = mZsize + 1;
 }
 
 void Solver::solve()
@@ -532,6 +529,31 @@ void Solver::applyBoundaryConditionsForE()
 				Ey(i, j, 0         , mCurrentTimeStep) = Ey(i, j, mZsize, mCurrentTimeStep);
 				Ez(i, j, mZsize + 1, mCurrentTimeStep) = Ez(i, j, 1     , mCurrentTimeStep);
 				Ez(i, j, 0         , mCurrentTimeStep) = Ez(i, j, mZsize, mCurrentTimeStep);
+			}
+		}
+	}
+
+	if(mBoundaryHighZ == reflecting)
+	{
+		for(int i = 0; i < mXsize+2; ++i)
+		{
+			for(int j = 0; j < mYsize+2; ++j)
+			{
+				Ex(i, j, mZsize + 1, mCurrentTimeStep) = 0;
+				Ey(i, j, mZsize + 1, mCurrentTimeStep) = 0;
+				Ez(i, j, mZsize + 1, mCurrentTimeStep) = 0; // ????
+			}
+		}
+	}
+	if(mBoundaryLowZ == reflecting)
+	{
+		for(int i = 0; i < mXsize+2; ++i)
+		{
+			for(int j = 0; j < mYsize+2; ++j)
+			{
+				Ex(i, j, 0, mCurrentTimeStep) = 0;
+				Ey(i, j, 0, mCurrentTimeStep) = 0;
+				Ez(i, j, 0, mCurrentTimeStep) = 0; // ????
 			}
 		}
 	}
